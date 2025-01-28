@@ -8,11 +8,23 @@
     PATTERN: name (, name)*
 */
 
-use std::{ops::{Deref, DerefMut}, str::FromStr};
+use std::{collections::HashMap, ops::{Deref, DerefMut}, str::FromStr};
 
+use lazy_static::lazy_static;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{parse_macro_input, spanned::Spanned};
+use syn::{parse_macro_input, spanned::Spanned, Path};
+
+lazy_static! {
+    // Hashmap of function transpilations
+    static ref TRANSPILATION_MAP: HashMap<&'static str, &'static str> = {
+        let mut result = HashMap::new();
+
+        result.insert("printf", "print!");
+
+        result
+    };
+}
 
 // DATA DEFINITION
 
@@ -247,37 +259,40 @@ impl quote::ToTokens for FunctionBody {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let statements = &mut self.statements.clone();
 
-        let mut transpiled_statements = Vec::new();
-
         // This feels absolutely disgusting.
-        for statement in statements {
+        let transpiled_statements = statements.iter().map(|statement| {
             match statement {
                 syn::Expr::Call(expr_call) => {
                     match expr_call.func.as_ref() {
-                        syn::Expr::Path(expr_path) => {
-                            if let Some(ident) = &expr_path.path.segments.first() {
-                                if ident.ident == "printf" {
+                        syn::Expr::Path(syn::ExprPath {path: syn::Path {segments, ..}, ..}) => {
+                            if let Some(ident) = segments.first() {
+                                let ident_str = format!("{}", ident.ident);
+
+                                if TRANSPILATION_MAP.contains_key(ident_str.as_str()) {
                                     let args = &expr_call.args;
+                                    let transpiled_func: proc_macro2::TokenStream = TRANSPILATION_MAP[ident_str.as_str()].parse().unwrap();
+                                    
                                     let new_expr = syn::parse_str::<syn::Expr>(
-                                        &quote::quote! { print!(#args) }
-                                        .to_string()
+                                        &quote::quote! { #transpiled_func(#args) }.to_string()
                                     ).unwrap();
     
                                     // println!("New expression: {:?} ({:?})", new_expr, new_expr.to_token_stream());
     
-                                    transpiled_statements.push(new_expr);
+                                    new_expr
                                 } else {
-                                    transpiled_statements.push(statement.clone())
+                                    statement.clone()
                                 }
+                            } else {
+                                statement.clone()
                             }
 
                         },
-                        _ => transpiled_statements.push(statement.clone()),
+                        _ => statement.clone(),
                     }                    
                 },
-                _ => transpiled_statements.push(statement.clone()),
+                _ => statement.clone(),
             }
-        }
+        });
 
         tokens.extend(quote::quote! {
             {
