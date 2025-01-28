@@ -8,13 +8,13 @@
     PATTERN: name (, name)*
 */
 
-// DATA DEFINITION
-
-use std::str::FromStr;
+use std::{ops::{Deref, DerefMut}, str::FromStr};
 
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::parse_macro_input;
+use syn::{parse_macro_input, spanned::Spanned};
+
+// DATA DEFINITION
 
 struct Comprehension {
     mapping: Mapping,
@@ -242,14 +242,46 @@ impl quote::ToTokens for ParameterList {
 // TODO currently this doesn't do any transpilation on the statements themselves,
 // meaning that the function body will only accept valid Rust code
 // There's a good amount of overlap between the two languages, but not enough
-// to get any meaningful out of it
+// to get any meaningful work out of it
 impl quote::ToTokens for FunctionBody {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let statements = &self.statements;
+        let statements = &mut self.statements.clone();
+
+        let mut transpiled_statements = Vec::new();
+
+        // This feels absolutely disgusting.
+        for statement in statements {
+            match statement {
+                syn::Expr::Call(expr_call) => {
+                    match expr_call.func.as_ref() {
+                        syn::Expr::Path(expr_path) => {
+                            if let Some(ident) = &expr_path.path.segments.first() {
+                                if ident.ident == "printf" {
+                                    let args = &expr_call.args;
+                                    let new_expr = syn::parse_str::<syn::Expr>(
+                                        &quote::quote! { print!(#args) }
+                                        .to_string()
+                                    ).unwrap();
+    
+                                    // println!("New expression: {:?} ({:?})", new_expr, new_expr.to_token_stream());
+    
+                                    transpiled_statements.push(new_expr);
+                                } else {
+                                    transpiled_statements.push(statement.clone())
+                                }
+                            }
+
+                        },
+                        _ => transpiled_statements.push(statement.clone()),
+                    }                    
+                },
+                _ => transpiled_statements.push(statement.clone()),
+            }
+        }
 
         tokens.extend(quote::quote! {
             {
-                #statements
+                #(#transpiled_statements;)*
             }
         })
     }

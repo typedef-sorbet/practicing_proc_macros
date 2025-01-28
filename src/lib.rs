@@ -2,7 +2,6 @@
 mod tests {
     use practice_macro::{comp, cfunc};
 
-
     #[test]
     fn it_works() {
         let empty: Vec<i32> = comp![x for x in []].collect();
@@ -21,12 +20,50 @@ mod tests {
 
     #[test]
     fn function_macros() {
-        assert_eq!(newFunction(5), 6);
+        assert_eq!(addOne(5), 6);
+        assert_eq!(addSomeNumber(10), 15);
+        assert_eq!(callsAnotherFunction(5), 7);
+        assert_eq!(conditionals(2), 1);
+        assert_eq!(conditionals(1), 0);
+        assert_eq!(callsPrintf(), 5);
     }
 
     cfunc!{
-        int newFunction(int input) {
+        int addOne(int input) {
             return input + 1;
+        }
+    }
+
+    cfunc!{
+        int addSomeNumber(int input) {
+            let a = 5;
+            return input + a;
+        }
+    }
+
+    cfunc!{
+        int callsAnotherFunction(int input) {
+            return addOne(addOne(input));
+        }
+    }
+
+    cfunc!{
+        int conditionals(int input) {
+            if (input % 2 == 0)
+            {
+                return 1;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+    }
+
+    cfunc!{
+        int callsPrintf() {
+            printf("Hello, world!\n");
+            return 5;
         }
     }
 }
