@@ -8,12 +8,13 @@
     PATTERN: name (, name)*
 */
 
-use std::{collections::HashMap, ops::{Deref, DerefMut}, str::FromStr};
+use std::{borrow::Cow, collections::HashMap, fmt::format, ops::{Deref, DerefMut}, str::FromStr};
 
 use lazy_static::lazy_static;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{parse_macro_input, spanned::Spanned, Path};
+use regex::{Captures, Regex};
+use syn::{parse_macro_input, punctuated::Punctuated, spanned::Spanned, token::Comma, Lit, Path};
 
 lazy_static! {
     // Hashmap of function transpilations
@@ -269,7 +270,7 @@ impl quote::ToTokens for FunctionBody {
                                 let ident_str = format!("{}", ident.ident);
 
                                 if TRANSPILATION_MAP.contains_key(ident_str.as_str()) {
-                                    let args = &expr_call.args;
+                                    let args = transpile_args(&expr_call.args);
                                     let transpiled_func: proc_macro2::TokenStream = TRANSPILATION_MAP[ident_str.as_str()].parse().unwrap();
                                     
                                     let new_expr = syn::parse_str::<syn::Expr>(
@@ -300,6 +301,48 @@ impl quote::ToTokens for FunctionBody {
             }
         })
     }
+}
+
+fn transpile_args(args: &Punctuated<syn::Expr, Comma>) -> proc_macro2::TokenStream {
+    let mut res: proc_macro2::TokenStream = proc_macro2::TokenStream::new();
+
+    let format_arg_regex = Regex::new(r"%([\.\-0-9]*)([sdfx])").unwrap();
+
+    for arg in args {
+        match arg {
+            syn::Expr::Lit(syn::ExprLit {lit: Lit::Str(litstr), ..}) => {
+                // Argument is a string literal. Search for C format arguments and replace them
+                // with Rust ones.
+                let mut litstr_mod = litstr.value();
+                let mut newlit: String;
+
+                loop {
+                    newlit = format_arg_regex.replace(&litstr_mod, |caps: &Captures<'_>| {
+                        println!("Found format arg in printf literal: {:?}", caps);
+
+                        let (_, [format_spec, format_type]) = caps.extract();
+
+                        if format_spec.is_empty() {
+                            String::from("{}")
+                        } else {
+                            format!("{{:{format_spec}{format_type}}}")
+                        }
+                    }).to_string();
+                    
+                    if newlit == *litstr_mod {
+                        break;
+                    } else {
+                        litstr_mod = newlit;
+                    }
+                }
+
+                res.extend(quote::quote! { #litstr_mod, });
+            },
+            _ => res.extend(quote::quote! { #arg, }),
+        }
+    }
+
+    res
 }
 
 impl quote::ToTokens for CFunction {

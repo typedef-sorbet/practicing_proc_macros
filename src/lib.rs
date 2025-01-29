@@ -26,6 +26,7 @@ mod tests {
         assert_eq!(conditionals(2), 1);
         assert_eq!(conditionals(1), 0);
         assert_eq!(callsPrintf(), 5);
+        assert_eq!(callsPrintfWithArgs(), 5);
     }
 
     cfunc!{
@@ -63,6 +64,16 @@ mod tests {
     cfunc!{
         int callsPrintf() {
             printf("Hello, world!\n");
+            return 5;
+        }
+    }
+
+    cfunc!{
+        int callsPrintfWithArgs() {
+            printf("Hello, world! My name is %s\n", "practice_macro");
+            printf("red:    0x%06x\n", 0xFF0000);
+            printf("green:  0x%06x\n", 0x00FF00);
+            printf("blue:   0x%06x\n", 0x0000FF);
             return 5;
         }
     }
